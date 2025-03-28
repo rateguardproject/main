@@ -11,7 +11,7 @@ from telegram.ext import (
 )
 from oauth2client.service_account import ServiceAccountCredentials
 from dotenv import load_dotenv
-
+from keep_alive import keep_alive
 
 load_dotenv()
 TOKEN = os.getenv("BOT_TOKEN")
@@ -26,7 +26,10 @@ user_stats_state = {}
 
 def get_sheet():
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-    creds = ServiceAccountCredentials.from_json_keyfile_name("service_account.json", scope)
+    import json
+    creds_json = os.getenv("SERVICE_ACCOUNT_JSON")
+    creds_dict = json.loads(creds_json)
+    creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
     client = gspread.authorize(creds)
     return client.open("RateGuard_Leads").sheet1
 
@@ -382,6 +385,7 @@ async def my_loads(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 if __name__ == '__main__':
+    keep_alive()
     app = ApplicationBuilder().token(TOKEN).build()
 
     submit_conv = ConversationHandler(
@@ -396,8 +400,6 @@ if __name__ == '__main__':
         },
         fallbacks=[]
     )
-
-    # и далее: stats_conv, my_stats_conv, add_handler и app.run_polling()
 
     stats_conv = ConversationHandler(
         entry_points=[CommandHandler("stats", stats_start)],
