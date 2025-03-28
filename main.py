@@ -11,7 +11,7 @@ from telegram.ext import (
 )
 from oauth2client.service_account import ServiceAccountCredentials
 from dotenv import load_dotenv
-from keep_alive import keep_alive
+
 
 load_dotenv()
 TOKEN = os.getenv("BOT_TOKEN")
