@@ -1,0 +1,10 @@
+python-telegram-bot==20.6
+python-dotenv
+requests
+telegram
+gspread
+oauth2client
+flask
+pgeocode
+pandas
+numpy
