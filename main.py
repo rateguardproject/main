@@ -395,13 +395,10 @@ if __name__ == '__main__':
             TOTAL_MILES: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_total)],
             RATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_rate)],
             TRAILER: [CallbackQueryHandler(get_trailer)],
-            COMMENT: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, get_comment),
-                CallbackQueryHandler(get_comment)
-            ]
+            COMMENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_comment), CallbackQueryHandler(get_comment)]
         },
         fallbacks=[],
-        per_message=True  # добавлено
+        per_chat=True
     )
 
     stats_conv = ConversationHandler(
@@ -410,7 +407,7 @@ if __name__ == '__main__':
             STATS_SELECT: [CallbackQueryHandler(handle_stats_selection)]
         },
         fallbacks=[],
-        per_message=True  # добавлено
+        per_chat=True
     )
 
     my_stats_conv = ConversationHandler(
@@ -419,7 +416,7 @@ if __name__ == '__main__':
             MY_STATS_DAY: [CallbackQueryHandler(handle_my_day_selection)]
         },
         fallbacks=[],
-        per_message=True  # добавлено
+        per_chat=True
     )
 
     app.add_handler(submit_conv)
