@@ -11,7 +11,7 @@ from telegram.ext import (
 )
 from oauth2client.service_account import ServiceAccountCredentials
 from dotenv import load_dotenv
-from keep_alive import keep_alive
+
 
 load_dotenv()
 TOKEN = os.getenv("BOT_TOKEN")
@@ -385,7 +385,6 @@ async def my_loads(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 if __name__ == '__main__':
-    keep_alive()
     app = ApplicationBuilder().token(TOKEN).build()
 
     submit_conv = ConversationHandler(
