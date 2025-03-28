@@ -382,7 +382,7 @@ async def my_loads(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 if __name__ == '__main__':
-
+    app = ApplicationBuilder().token(TOKEN).build()
 
     submit_conv = ConversationHandler(
         entry_points=[CommandHandler("submit", submit)],
@@ -396,6 +396,8 @@ if __name__ == '__main__':
         },
         fallbacks=[]
     )
+
+    # и далее: stats_conv, my_stats_conv, add_handler и app.run_polling()
 
     stats_conv = ConversationHandler(
         entry_points=[CommandHandler("stats", stats_start)],
