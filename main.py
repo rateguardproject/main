@@ -385,6 +385,7 @@ async def my_loads(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 if __name__ == '__main__':
+    keep_alive()
     app = ApplicationBuilder().token(TOKEN).build()
 
     submit_conv = ConversationHandler(
@@ -395,9 +396,13 @@ if __name__ == '__main__':
             TOTAL_MILES: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_total)],
             RATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_rate)],
             TRAILER: [CallbackQueryHandler(get_trailer)],
-            COMMENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_comment), CallbackQueryHandler(get_comment)]
+            COMMENT: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, get_comment),
+                CallbackQueryHandler(get_comment)
+            ]
         },
-        fallbacks=[]
+        fallbacks=[],
+        per_message=True  # добавлено
     )
 
     stats_conv = ConversationHandler(
@@ -405,7 +410,8 @@ if __name__ == '__main__':
         states={
             STATS_SELECT: [CallbackQueryHandler(handle_stats_selection)]
         },
-        fallbacks=[]
+        fallbacks=[],
+        per_message=True  # добавлено
     )
 
     my_stats_conv = ConversationHandler(
@@ -413,7 +419,8 @@ if __name__ == '__main__':
         states={
             MY_STATS_DAY: [CallbackQueryHandler(handle_my_day_selection)]
         },
-        fallbacks=[]
+        fallbacks=[],
+        per_message=True  # добавлено
     )
 
     app.add_handler(submit_conv)
@@ -423,3 +430,4 @@ if __name__ == '__main__':
     app.add_handler(CommandHandler("my_loads", my_loads))
 
     app.run_polling()
+
