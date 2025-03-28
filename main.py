@@ -398,7 +398,9 @@ if __name__ == '__main__':
             COMMENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_comment), CallbackQueryHandler(get_comment)]
         },
         fallbacks=[],
-        per_chat=True
+        per_user=True,  # ✅ исправлено
+        per_chat=False  # ✅ добавлено
+
     )
 
     stats_conv = ConversationHandler(
