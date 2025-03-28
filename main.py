@@ -385,7 +385,6 @@ async def my_loads(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 if __name__ == '__main__':
-    keep_alive()
     app = ApplicationBuilder().token(TOKEN).build()
 
     submit_conv = ConversationHandler(
