@@ -465,7 +465,7 @@ async def handle_edit_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except:
         pass
 
-    # Обновим значение
+    # Обновим всезначение
     field_map = {
         "pickup": "Pickup ZIP",
         "delivery": "Delivery ZIP",
