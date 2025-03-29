@@ -23,6 +23,8 @@ FMCSA_API_KEY = "91a883766f99d16ed141dd4a254158a898fba793"
 PICKUP, DELIVERY, TOTAL_MILES, RATE, TRAILER, COMMENT, CANCEL = range(7)
 STATS_SELECT, MY_STATS_DAY = range(6, 8)
 
+edit_state = {}  # user_id: {row_index, message_ids, step}
+
 nomi = pgeocode.Nominatim('us')
 user_stats_state = {}
 
@@ -246,6 +248,63 @@ async def finalize_submission(update: Update, context: ContextTypes.DEFAULT_TYPE
     await asyncio.sleep(5)
     await context.bot.delete_message(update.effective_chat.id, m3.message_id)
 
+async def start_edit_load(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    data = query.data.split("_")
+    if len(data) < 3:
+        await query.message.reply_text("❌ Invalid load ID.")
+        return
+
+    _, date_str, pickup_zip, user_id = data
+    user_id = str(update.effective_user.id)
+
+    # Загрузка таблицы
+    sheet = get_sheet()
+    records = sheet.get_all_records()
+    for i, row in enumerate(records):
+        if row["Pickup ZIP"] == pickup_zip and str(row["User ID"]) == user_id:
+            edit_state[user_id] = {
+                "row_index": i + 2,  # +2, т.к. строки начинаются с 1, и есть заголовок
+                "data": row,
+                "step": 0
+            }
+            break
+    else:
+        await query.message.reply_text("❌ Load not found.")
+        return
+
+    await show_edit_menu(update, context)
+
+async def show_edit_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = str(update.effective_user.id)
+    row = edit_state[user_id]["data"]
+    pickup = row["Pickup ZIP"]
+    delivery = row["Delivery ZIP"]
+    trailer = row["Trailer"]
+    rate = row["Rate"]
+    miles = row["Total Miles"]
+    date = row["Date"]
+
+    text = (
+        f"🛠 *Edit Load — {date}*\n"
+        f"📍 {pickup} → {delivery}\n"
+        f"🚛 {trailer} | 💵 ${rate} | {miles} mi\n\n"
+        f"Choose field to edit:"
+    )
+    buttons = [
+        [InlineKeyboardButton("📍 Pickup ZIP", callback_data="editfield_pickup")],
+        [InlineKeyboardButton("📍 Delivery ZIP", callback_data="editfield_delivery")],
+        [InlineKeyboardButton("📏 Total Miles", callback_data="editfield_miles")],
+        [InlineKeyboardButton("💵 Rate", callback_data="editfield_rate")],
+        [InlineKeyboardButton("🚛 Trailer", callback_data="editfield_trailer")],
+        [InlineKeyboardButton("💬 Comment", callback_data="editfield_comment")],
+        [InlineKeyboardButton("🔁 Cancel", callback_data="cancel_edit")]
+    ]
+
+    await update.callback_query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(buttons), parse_mode="Markdown")
+
 def resolve_location(value):
     if len(value) == 2 and value.isalpha():
         return ("", value)
@@ -353,6 +412,70 @@ async def handle_my_day_selection(update: Update, context: ContextTypes.DEFAULT_
 
     return ConversationHandler.END
 
+async def handle_edit_field_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    user_id = str(update.effective_user.id)
+    field = query.data.split("_")[1]
+
+    edit_state[user_id]["field"] = field
+
+    question_map = {
+        "pickup": "Enter new Pickup ZIP:",
+        "delivery": "Enter new Delivery ZIP:",
+        "miles": "Enter new total miles:",
+        "rate": "Enter new rate ($):",
+        "trailer": "Enter new trailer type:",
+        "comment": "Enter new comment:"
+    }
+
+    msg = await context.bot.send_message(
+        chat_id=query.message.chat_id,
+        text=question_map[field],
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel_edit")]])
+    )
+
+    edit_state[user_id]["question_msg_id"] = msg.message_id
+    return
+
+
+async def handle_edit_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = str(update.effective_user.id)
+    if user_id not in edit_state:
+        return
+
+    value = update.message.text.strip()
+    field = edit_state[user_id]["field"]
+    row_idx = edit_state[user_id]["row_index"]
+    sheet = get_sheet()
+
+    # Очистим вопрос и ответ
+    try:
+        await context.bot.delete_message(update.effective_chat.id, edit_state[user_id]["question_msg_id"])
+        await context.bot.delete_message(update.effective_chat.id, update.message.message_id)
+    except:
+        pass
+
+    # Обновим значение
+    field_map = {
+        "pickup": "Pickup ZIP",
+        "delivery": "Delivery ZIP",
+        "miles": "Total Miles",
+        "rate": "Rate",
+        "trailer": "Trailer",
+        "comment": "Comment"
+    }
+    col_name = field_map[field]
+
+    sheet.update_cell(row_idx, get_column_index(sheet, col_name), value)
+    edit_state[user_id]["data"][col_name] = value
+
+    msg = await context.bot.send_message(update.effective_chat.id, "✅ Value updated.")
+    await asyncio.sleep(3)
+    await context.bot.delete_message(update.effective_chat.id, msg.message_id)
+
+    await show_edit_menu(update, context)
 
 
 async def broker_lookup(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -438,6 +561,18 @@ async def my_loads(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await update.message.reply_text(text, reply_markup=keyboard)
 
+async def cancel_edit(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    await query.message.edit_text("❌ Editing canceled.")
+    user_id = str(update.effective_user.id)
+    if user_id in edit_state:
+        del edit_state[user_id]
+
+def get_column_index(sheet, column_name):
+    header = sheet.row_values(1)
+    return header.index(column_name) + 1
+
 
 
 
@@ -486,6 +621,10 @@ if __name__ == '__main__':
     app.add_handler(my_stats_conv)
     app.add_handler(CommandHandler("broker", broker_lookup))
     app.add_handler(CommandHandler("my_loads", my_loads))
+    app.add_handler(CallbackQueryHandler(start_edit_load, pattern="^edit_"))
+    app.add_handler(CallbackQueryHandler(handle_edit_field_selection, pattern="^editfield_"))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_edit_input))
+    app.add_handler(CallbackQueryHandler(cancel_edit, pattern="^cancel_edit$"))
 
     app.run_polling()
 
