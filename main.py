@@ -3,6 +3,7 @@ import pandas as pd
 import gspread
 import pgeocode
 import requests
+import asyncio
 from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.constants import ParseMode
@@ -163,8 +164,8 @@ async def handle_submit_callback(update: Update, context: ContextTypes.DEFAULT_T
 
     if query.data == "cancel":
         msg = await query.message.reply_text("❌ Submission canceled.")
-        await context.bot.delete_message(chat_id, msg.message_id, delay=5)
-        return ConversationHandler.END
+        await asyncio.sleep(5)
+        await context.bot.delete_message(chat_id, msg.message_id)
     if query.data == "skip" and field == "comment":
         context.user_data[field] = ""
     else:
@@ -232,8 +233,8 @@ async def finalize_submission(update: Update, context: ContextTypes.DEFAULT_TYPE
     m1 = await context.bot.send_message(chat_id="@rateguard", text=text)
     m2 = await context.bot.send_message(chat_id="-1002235875053", text=text)
     m3 = await update.effective_message.reply_text("✅ Load submitted and published!")
-
-    await context.bot.delete_message(update.effective_chat.id, m3.message_id, delay=5)
+    await asyncio.sleep(5)
+    await context.bot.delete_message(update.effective_chat.id, m3.message_id)
 
 def resolve_location(value):
     if len(value) == 2 and value.isalpha():
