@@ -88,130 +88,140 @@ def generate_my_stats_message(label, df):
 
 # === /submit ===
 
-# === Новый /submit с единым сообщением и кнопкой Cancel ===
+# === START SUBMIT FLOW ===
+submit_states = ["pickup_zip", "delivery_zip", "total_miles", "rate", "trailer", "comment"]
+submit_step_texts = [
+    "📍 *Step 1/6* — Enter pickup ZIP or State abbreviation (e.g., CA):",
+    "📍 *Step 2/6* — Enter delivery ZIP or State abbreviation:",
+    "📏 *Step 3/6* — Enter total miles:",
+    "💵 *Step 4/6* — Enter total rate ($):",
+    "🚛 *Step 5/6* — Choose trailer type:",
+    "💬 *Step 6/6* — Add comment (or press 'Skip')"
+]
+submit_current_messages = {}  # для отслеживания сообщения с кнопками
 
-# === /submit (новый улучшенный) ===
-
-# 👇 Начало сабмита
-async def start_submit(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def submit(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
-    context.user_data["message"] = await update.message.reply_text("Step 1️⃣: Enter pickup ZIP or State abbreviation (e.g., CA):", reply_markup=cancel_markup())
+    context.user_data["submit_step"] = 0
+    await send_submit_step(update.effective_chat.id, context)
     return PICKUP
 
-# 🚚 Шаг 1: Pickup
-async def pickup_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["pickup_zip"] = update.message.text.strip().upper()
-    await update.message.delete()
-    await context.user_data["message"].edit_text("Step 2️⃣: Enter delivery ZIP or State abbreviation:", reply_markup=cancel_markup())
-    return DELIVERY
+async def send_submit_step(chat_id, context: ContextTypes.DEFAULT_TYPE):
+    step = context.user_data.get("submit_step", 0)
+    text = submit_step_texts[step]
 
-# 🏁 Шаг 2: Delivery
-async def delivery_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["delivery_zip"] = update.message.text.strip().upper()
-    await update.message.delete()
-    await context.user_data["message"].edit_text("Step 3️⃣: Enter total miles:", reply_markup=cancel_markup())
-    return TOTAL_MILES
+    # Кнопки отмены
+    buttons = [[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]
 
-# 📏 Шаг 3: Miles
-async def miles_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["total_miles"] = update.message.text.strip()
-    await update.message.delete()
-    await context.user_data["message"].edit_text("Step 4️⃣: Enter total rate ($):", reply_markup=cancel_markup())
-    return RATE
+    if step == 4:  # трейлеры
+        trailer_row1 = [
+            InlineKeyboardButton("Dry Van", callback_data="Dry Van"),
+            InlineKeyboardButton("Reefer", callback_data="Reefer"),
+            InlineKeyboardButton("Flatbed", callback_data="Flatbed")
+        ]
+        trailer_row2 = [
+            InlineKeyboardButton("Power Only", callback_data="Power Only"),
+            InlineKeyboardButton("Step Deck", callback_data="Step Deck"),
+            InlineKeyboardButton("Conestoga", callback_data="Conestoga")
+        ]
+        trailer_row3 = [InlineKeyboardButton("Other", callback_data="Other")]
+        buttons = [trailer_row1, trailer_row2, trailer_row3] + buttons
+    elif step == 5:
+        buttons[0].insert(0, InlineKeyboardButton("➡️ Skip", callback_data="skip"))
 
-# 💵 Шаг 4: Rate
-async def rate_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    raw = update.message.text.strip().replace("$", "").replace(",", "")
-    try:
-        float(raw)
-    except:
-        await update.message.delete()
-        await context.user_data["message"].edit_text("⚠️ Please enter a valid number for rate. Try again:", reply_markup=cancel_markup())
-        return RATE
+    msg = await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=InlineKeyboardMarkup(buttons), parse_mode="Markdown")
+    submit_current_messages[chat_id] = msg.message_id
 
-    context.user_data["rate"] = raw
-    await update.message.delete()
-    buttons = [
-        [InlineKeyboardButton("Dry Van", callback_data="Dry Van"),
-         InlineKeyboardButton("Reefer", callback_data="Reefer")],
-        [InlineKeyboardButton("Flatbed", callback_data="Flatbed"),
-         InlineKeyboardButton("Power Only", callback_data="Power Only")],
-        [InlineKeyboardButton("Other", callback_data="Other")]
-    ]
-    await context.user_data["message"].edit_text("Step 5️⃣: Choose trailer type:", reply_markup=InlineKeyboardMarkup(buttons + [cancel_button()]))
-    return TRAILER
+async def handle_submit_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    user_input = update.message.text.strip()
+    step = context.user_data.get("submit_step", 0)
+    field = submit_states[step]
+    context.user_data[field] = user_input
 
-# 🚛 Шаг 5: Trailer
-async def trailer_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Удаление старого сообщения бота
+    if chat_id in submit_current_messages:
+        await context.bot.delete_message(chat_id, submit_current_messages[chat_id])
+
+    step += 1
+    if step < len(submit_states):
+        context.user_data["submit_step"] = step
+        await send_submit_step(chat_id, context)
+        return step
+    else:
+        await finalize_submission(update, context)
+        return ConversationHandler.END
+
+async def handle_submit_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
+    chat_id = query.message.chat.id
+    step = context.user_data.get("submit_step", 0)
+    field = submit_states[step]
+
     await query.answer()
-    context.user_data["trailer"] = query.data
-    await context.user_data["message"].edit_text("Step 6️⃣: Add comment (or type '-' to skip):", reply_markup=cancel_markup())
-    return COMMENT
+    await context.bot.delete_message(chat_id, query.message.message_id)
 
-# 💬 Шаг 6: Comment + Подтверждение
-async def comment_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["comment"] = update.message.text.strip() if update.message.text.strip() != "-" else ""
-    await update.message.delete()
-    summary = await render_summary(context)
-    buttons = [
-        [InlineKeyboardButton("✅ Submit", callback_data="confirm_submit"),
-         InlineKeyboardButton("❌ Cancel", callback_data="cancel_submit")]
-    ]
-    await context.user_data["message"].edit_text(summary, reply_markup=InlineKeyboardMarkup(buttons))
-    return COMMENT
+    if query.data == "cancel":
+        msg = await query.message.reply_text("❌ Submission canceled.")
+        await context.bot.delete_message(chat_id, msg.message_id, delay=5)
+        return ConversationHandler.END
+    if query.data == "skip" and field == "comment":
+        context.user_data[field] = ""
+    else:
+        context.user_data[field] = query.data
 
-# ✅ Подтверждение
-async def confirm_submit(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.callback_query.answer()
-    await update.callback_query.edit_message_text("✅ Load submitted and published!")
-    await save_to_sheet(context)
-    return ConversationHandler.END
+    step += 1
+    if step < len(submit_states):
+        context.user_data["submit_step"] = step
+        await send_submit_step(chat_id, context)
+        return step
+    else:
+        await finalize_submission(update, context)
+        return ConversationHandler.END
 
-# ❌ Отмена
-async def cancel_submit(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.callback_query.answer()
-    await context.user_data["message"].edit_text("❌ Submission canceled.")
-    return ConversationHandler.END
-
-# 📥 Сохраняем в Google Sheets
-async def save_to_sheet(context):
-    sheet = get_sheet()
+async def finalize_submission(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    username = f"@{user.username}" if user.username else user.full_name
+    user_id = str(user.id)
     data = context.user_data
+
+    # Конвертация
+    try:
+        total = float(str(data["total_miles"]).replace("$", ""))
+        rate = float(str(data["rate"]).replace("$", ""))
+    except ValueError:
+        msg = await update.effective_message.reply_text("❌ Submission failed. Invalid numbers.")
+        await context.bot.delete_message(update.effective_chat.id, msg.message_id, delay=5)
+        return
+
     date = datetime.now().strftime("%Y-%m-%d")
-
-    def resolve_location(value):
-        if len(value) == 2 and value.isalpha():
-            return ("", value)
-        info = nomi.query_postal_code(value)
-        return (info.place_name or "", info.state_code or value)
-
     pickup_city, pickup_state = resolve_location(data["pickup_zip"])
     delivery_city, delivery_state = resolve_location(data["delivery_zip"])
     pickup = f"{pickup_city}, {pickup_state}" if pickup_city else pickup_state
     delivery = f"{delivery_city}, {delivery_state}" if delivery_city else delivery_state
-
-    total = float(data["total_miles"])
-    rate = float(data["rate"])
     rpm_total = format(rate / total, '.2f') if total else ""
 
+    sheet = get_sheet()
     sheet.append_row([
         date,
         data["pickup_zip"],
         data["delivery_zip"],
-        "", "", total, rate,
-        "", rpm_total,
+        "", "",
+        total,
+        rate,
+        "",
+        rpm_total,
         data["trailer"],
-        data.get("username", ""),
-        "", data["comment"],
-        data.get("username", ""),
-        data.get("user_id", "")
+        username,
+        "",
+        data.get("comment", ""),
+        username,
+        user_id
     ])
 
-    # Отправка сообщения в группу
-    message = (
+    text = (
         f"🗓 {date}\n"
-        f"🧑‍✈️ Posted by: {data.get('username', '—')}\n"
+        f"🧑‍✈️ Posted by: {username}\n"
         f"📍 {pickup} → {delivery}\n"
         f"📏 Miles: {int(total)}\n"
         f"💵 Rate: ${int(rate)} | RPM: Total — {rpm_total}\n"
@@ -219,30 +229,18 @@ async def save_to_sheet(context):
         f"💬 Comment: {data['comment'] or '—'}"
     )
 
-    await context.bot.send_message(chat_id="@rateguard", text=message)
-    await context.bot.send_message(chat_id="-1002235875053", text=message)
+    m1 = await context.bot.send_message(chat_id="@rateguard", text=text)
+    m2 = await context.bot.send_message(chat_id="-1002235875053", text=text)
+    m3 = await update.effective_message.reply_text("✅ Load submitted and published!")
 
-# 🧾 Сводка для подтверждения
-async def render_summary(context):
-    d = context.user_data
-    return (
-        f"📝 Confirm Submission:\n"
-        f"• Pickup: {d['pickup_zip']}\n"
-        f"• Delivery: {d['delivery_zip']}\n"
-        f"• Miles: {d['total_miles']}\n"
-        f"• Rate: ${d['rate']}\n"
-        f"• Trailer: {d['trailer']}\n"
-        f"• Comment: {d['comment'] or '—'}\n\n"
-        f"Submit this load?"
-    )
+    await context.bot.delete_message(update.effective_chat.id, m3.message_id, delay=5)
 
-# 🔘 Кнопка отмены
-def cancel_markup():
-    return InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]])
+def resolve_location(value):
+    if len(value) == 2 and value.isalpha():
+        return ("", value)
+    info = nomi.query_postal_code(value)
+    return (info.place_name or "", info.state_code or value)
 
-def cancel_button():
-    return [InlineKeyboardButton("❌ Cancel", callback_data="cancel")]
-# === /stats ===
 
 async def stats_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
@@ -436,24 +434,22 @@ if __name__ == '__main__':
     app = ApplicationBuilder().token(TOKEN).build()
 
     submit_conv = ConversationHandler(
-        entry_points=[CommandHandler("submit", start_submit)],
+        entry_points=[CommandHandler("submit", submit)],
         states={
-            PICKUP: [CallbackQueryHandler(cancel_submit, pattern="^cancel$"),
-                     MessageHandler(filters.TEXT & ~filters.COMMAND, pickup_step)],
-            DELIVERY: [CallbackQueryHandler(cancel_submit, pattern="^cancel$"),
-                       MessageHandler(filters.TEXT & ~filters.COMMAND, delivery_step)],
-            TOTAL_MILES: [CallbackQueryHandler(cancel_submit, pattern="^cancel$"),
-                          MessageHandler(filters.TEXT & ~filters.COMMAND, miles_step)],
-            RATE: [CallbackQueryHandler(cancel_submit, pattern="^cancel$"),
-                   MessageHandler(filters.TEXT & ~filters.COMMAND, rate_step)],
-            TRAILER: [CallbackQueryHandler(trailer_step)],
-            COMMENT: [CallbackQueryHandler(confirm_submit, pattern="^confirm_submit$"),
-                      CallbackQueryHandler(cancel_submit, pattern="^cancel_submit$"),
-                      MessageHandler(filters.TEXT & ~filters.COMMAND, comment_step)]
+            PICKUP: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_submit_input),
+                     CallbackQueryHandler(handle_submit_callback)],
+            DELIVERY: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_submit_input),
+                       CallbackQueryHandler(handle_submit_callback)],
+            TOTAL_MILES: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_submit_input),
+                          CallbackQueryHandler(handle_submit_callback)],
+            RATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_submit_input),
+                   CallbackQueryHandler(handle_submit_callback)],
+            TRAILER: [CallbackQueryHandler(handle_submit_callback)],
+            COMMENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_submit_input),
+                      CallbackQueryHandler(handle_submit_callback)]
         },
-        fallbacks=[CallbackQueryHandler(cancel_submit, pattern="^cancel$")],
-        per_chat=True,
-        per_user=True
+        fallbacks=[],
+        per_chat=True
     )
 
     stats_conv = ConversationHandler(
