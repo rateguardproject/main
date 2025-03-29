@@ -5,6 +5,7 @@ import pgeocode
 import requests
 from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
+from telegram.constants import ParseMode
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, ContextTypes,
     ConversationHandler, MessageHandler, CallbackQueryHandler, filters
@@ -18,7 +19,7 @@ TOKEN = os.getenv("BOT_TOKEN")
 
 FMCSA_API_KEY = "91a883766f99d16ed141dd4a254158a898fba793"
 
-PICKUP, DELIVERY, TOTAL_MILES, RATE, TRAILER, COMMENT = range(6)
+PICKUP, DELIVERY, TOTAL_MILES, RATE, TRAILER, COMMENT, CANCEL = range(7)
 STATS_SELECT, MY_STATS_DAY = range(6, 8)
 
 nomi = pgeocode.Nominatim('us')
@@ -87,61 +88,89 @@ def generate_my_stats_message(label, df):
 
 # === /submit ===
 
+# === Новый /submit с единым сообщением и кнопкой Cancel ===
+
 async def submit(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("\U0001F4CD Enter pickup ZIP or State abbreviation (e.g., CA):")
+    context.user_data.clear()
+    context.user_data["msg"] = await update.message.reply_text(
+        "📍 Enter pickup ZIP or State abbreviation:",
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]])
+    )
     return PICKUP
 
-async def get_pickup(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def cancel_flow(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.callback_query.answer()
+    msg = context.user_data.get("msg")
+    if msg:
+        await msg.edit_text("❌ Submission cancelled.", reply_markup=None)
+    context.user_data.clear()
+    return ConversationHandler.END
+
+async def pickup_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["pickup_zip"] = update.message.text.strip().upper()
-    await update.message.reply_text("\U0001F6A9 Enter delivery ZIP or State abbreviation:")
+    await context.user_data["msg"].edit_text(
+        "🚩 Enter delivery ZIP or State abbreviation:",
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]])
+    )
     return DELIVERY
 
-async def get_delivery(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def delivery_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["delivery_zip"] = update.message.text.strip().upper()
-    await update.message.reply_text("\U0001F4CD Enter total miles:")
+    await context.user_data["msg"].edit_text(
+        "📏 Enter total miles:",
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]])
+    )
     return TOTAL_MILES
 
-async def get_total(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def miles_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["total_miles"] = update.message.text.strip()
-    await update.message.reply_text("\U0001F4B5 Enter total rate ($):")
+    await context.user_data["msg"].edit_text(
+        "💵 Enter total rate (numbers only):",
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]])
+    )
     return RATE
 
-async def get_rate(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["rate"] = update.message.text.strip()
+async def rate_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    rate = update.message.text.strip().replace("$", "").replace(",", "")
+    if not rate.replace('.', '').isdigit():
+        await update.message.reply_text("❗ Please enter a valid number (e.g., 1250)")
+        return RATE
+
+    context.user_data["rate"] = rate
     keyboard = [
-        [InlineKeyboardButton("Dry Van", callback_data="Dry Van"), InlineKeyboardButton("Reefer", callback_data="Reefer")],
-        [InlineKeyboardButton("Flatbed", callback_data="Flatbed"), InlineKeyboardButton("Power Only", callback_data="Power Only")],
-        [InlineKeyboardButton("Step Deck", callback_data="Step Deck"), InlineKeyboardButton("Other", callback_data="Other")]
+        [InlineKeyboardButton("Dry Van", callback_data="tr_Dry Van"),
+         InlineKeyboardButton("Reefer", callback_data="tr_Reefer")],
+        [InlineKeyboardButton("Flatbed", callback_data="tr_Flatbed"),
+         InlineKeyboardButton("Power Only", callback_data="tr_Power Only")],
+        [InlineKeyboardButton("Step Deck", callback_data="tr_Step Deck"),
+         InlineKeyboardButton("Other", callback_data="tr_Other")],
+        [InlineKeyboardButton("❌ Cancel", callback_data="cancel")]
     ]
-    await update.message.reply_text("\U0001F69A Choose trailer type:", reply_markup=InlineKeyboardMarkup(keyboard))
+    await context.user_data["msg"].edit_text("🚛 Choose trailer type:", reply_markup=InlineKeyboardMarkup(keyboard))
     return TRAILER
 
-async def get_trailer(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    await query.edit_message_reply_markup(reply_markup=None)
-    context.user_data["trailer"] = query.data
-    keyboard = [[InlineKeyboardButton("Skip", callback_data="skip")]]
-    await query.edit_message_text("\U0001F4AC Add comment (or press 'Skip'):", reply_markup=InlineKeyboardMarkup(keyboard))
+async def trailer_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.callback_query.answer()
+    trailer = update.callback_query.data.replace("tr_", "")
+    context.user_data["trailer"] = trailer
+    await update.callback_query.edit_message_text(
+        "💬 Enter comment or type 'skip':",
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]])
+    )
     return COMMENT
 
-async def get_comment(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    username = f"@{user.username}" if user.username else user.full_name
-    user_id = str(user.id)
-    context.user_data["username"] = username
-    context.user_data["user_id"] = user_id
+async def comment_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    comment = update.message.text.strip()
+    context.user_data["comment"] = "" if comment.lower() == "skip" else comment
 
-    if update.callback_query:
-        query = update.callback_query
-        await query.answer()
-        await query.edit_message_reply_markup(reply_markup=None)
-        context.user_data["comment"] = ""
-    else:
-        context.user_data["comment"] = update.message.text.strip()
+    user = update.effective_user
+    context.user_data["username"] = f"@{user.username}" if user.username else user.full_name
+    context.user_data["user_id"] = str(user.id)
 
     await save_to_sheet(context)
-    await update.effective_message.reply_text("✅ Load submitted and published!")
+
+    await context.user_data["msg"].edit_text("✅ Load submitted and published!")
+    context.user_data.clear()
     return ConversationHandler.END
 
 async def save_to_sheet(context):
@@ -390,16 +419,16 @@ if __name__ == '__main__':
     submit_conv = ConversationHandler(
         entry_points=[CommandHandler("submit", submit)],
         states={
-            PICKUP: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_pickup)],
-            DELIVERY: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_delivery)],
-            TOTAL_MILES: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_total)],
-            RATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_rate)],
-            TRAILER: [CallbackQueryHandler(get_trailer)],
-            COMMENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_comment), CallbackQueryHandler(get_comment)]
+            PICKUP: [MessageHandler(filters.TEXT & ~filters.COMMAND, pickup_step)],
+            DELIVERY: [MessageHandler(filters.TEXT & ~filters.COMMAND, delivery_step)],
+            TOTAL_MILES: [MessageHandler(filters.TEXT & ~filters.COMMAND, miles_step)],
+            RATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, rate_step)],
+            TRAILER: [CallbackQueryHandler(trailer_step, pattern=r"^tr_")],
+            COMMENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, comment_step)],
         },
-        fallbacks=[],
-        per_user=True,  # ✅ исправлено
-        per_chat=False  # ✅ добавлено
+        fallbacks=[CallbackQueryHandler(cancel_flow, pattern="^cancel$")],
+        per_chat=True
+
 
     )
 
