@@ -160,8 +160,8 @@ async def save_to_sheet(context):
     pickup = f"{pickup_city}, {pickup_state}" if pickup_city else pickup_state
     delivery = f"{delivery_city}, {delivery_state}" if delivery_city else delivery_state
 
-    total = float(data["total_miles"])
-    rate = float(data["rate"])
+    total = float(str(data["total_miles"]).replace("$", "").replace(",", "").strip())
+    rate = float(str(data["rate"]).replace("$", "").replace(",", "").strip())
     rpm_total = format(rate / total, '.2f') if total else ""
 
     sheet.append_row([
