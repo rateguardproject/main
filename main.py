@@ -479,6 +479,10 @@ async def handle_edit_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     sheet.update_cell(row_idx, get_column_index(sheet, col_name), value)
     edit_state[user_id]["data"][col_name] = value
 
+    # ✅ Добавить вот это:
+    if field in ["miles", "rate"]:
+        update_rpm_in_edit(sheet, row_idx, edit_state[user_id]["data"])
+
     msg = await context.bot.send_message(update.effective_chat.id, "✅ Value updated.")
     await asyncio.sleep(3)
     await context.bot.delete_message(update.effective_chat.id, msg.message_id)
@@ -584,6 +588,25 @@ def get_column_index(sheet, column_name):
     header = sheet.row_values(1)
     return header.index(column_name) + 1
 
+def update_rpm_in_edit(sheet, row_idx, updated_data):
+    """
+    Обновляет RPM Total в Google Sheet после редактирования 'Rate' или 'Total Miles'.
+    """
+    try:
+        rate = float(updated_data.get("Rate", 0))
+        miles = float(updated_data.get("Total Miles", 0))
+        rpm = round(rate / miles, 2) if miles else ""
+    except Exception as e:
+        rpm = ""
+
+    if rpm != "":
+        # Найдём индекс колонки "RPM Total"
+        header = sheet.row_values(1)
+        if "RPM Total" in header:
+            col_index = header.index("RPM Total") + 1
+            sheet.update_cell(row_idx, col_index, str(rpm))
+            return True
+    return False
 
 
 
