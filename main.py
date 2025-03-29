@@ -136,6 +136,8 @@ async def send_submit_step(chat_id, context: ContextTypes.DEFAULT_TYPE):
 async def handle_submit_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     user_input = update.message.text.strip()
+    # Сохраняем ID последнего сообщения пользователя, чтобы потом удалить
+    context.user_data["last_user_message_id"] = update.message.message_id
     step = context.user_data.get("submit_step", 0)
     field = submit_states[step]
     context.user_data[field] = user_input
@@ -143,6 +145,12 @@ async def handle_submit_input(update: Update, context: ContextTypes.DEFAULT_TYPE
     # Удаление старого сообщения бота
     if chat_id in submit_current_messages:
         await context.bot.delete_message(chat_id, submit_current_messages[chat_id])
+    # Удаляем последнее сообщение пользователя
+    if "last_user_message_id" in context.user_data:
+        try:
+            await context.bot.delete_message(chat_id, context.user_data["last_user_message_id"])
+        except:
+            pass  # Игнорируем, если нельзя удалить
 
     step += 1
     if step < len(submit_states):
