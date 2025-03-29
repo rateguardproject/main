@@ -44,48 +44,61 @@ def classify_distance(miles):
         return "Medium"
     return "Long"
 
+
 def load_data():
     sheet = get_sheet()
     data = sheet.get_all_records()
     df = pd.DataFrame(data)
     df['Date'] = pd.to_datetime(df['Date'], errors='coerce').dt.date
     df['Total Miles'] = pd.to_numeric(df['Total Miles'], errors='coerce')
-    df['RPM Total'] = pd.to_numeric(df['RPM Total'].astype(str).str.replace(',', '.'), errors='coerce')
+    df['Rate'] = pd.to_numeric(df['Rate'], errors='coerce')
+
+    # Пересчёт RPM как Rate / Miles — правильно и надёжно
+    df['RPM Total'] = df.apply(lambda row: row['Rate'] / row['Total Miles'] if row['Total Miles'] else None, axis=1)
+
     df['Length Category'] = df['Total Miles'].apply(classify_distance)
     return df
 
 def generate_stats_message(period_label, df):
-    lines = [f"\U0001F4CA Load Stats — {period_label}\n"]
-    avg_by_trailer = df.groupby("Trailer")["RPM Total"].mean().round(2)
-    lines.append("\U0001F69A Average RPM by Trailer Type:")
-    for trailer, avg in avg_by_trailer.items():
-        avg_display = f"{avg:.2f}" if not pd.isna(avg) else "—"
-        lines.append(f"• {trailer}: Total — {avg_display}")
+    lines = [f"📊 Load Stats — {period_label}\n"]
 
-    lines.append("\n\U0001F4DD RPM by Load Length & Trailer Type:")
-    lines.append("Length categories:\n• Short < 500 mi\n• Medium = 500 to 1000 mi\n• Long > 1000 mi\n")
+    # Группировка по трейлеру — считаем правильный RPM (Rate / Miles)
+    lines.append("🚚 Weighted RPM by Trailer Type:")
+    trailer_stats = df.groupby("Trailer").agg({"Rate": "sum", "Total Miles": "sum"})
+    for trailer, row in trailer_stats.iterrows():
+        miles = row["Total Miles"]
+        rate = row["Rate"]
+        rpm = round(rate / miles, 2) if miles else "—"
+        lines.append(f"• {trailer}: RPM — {rpm}")
+
+    # Группировка по категории длины + трейлер
+    lines.append("\n📝 RPM by Load Length & Trailer:")
+    lines.append("Length categories:\n• Short < 500 mi\n• Medium = 500–1000 mi\n• Long > 1000 mi\n")
 
     for category in ["Short", "Medium", "Long"]:
         lines.append(f"{category} Loads:")
         cat_df = df[df["Length Category"] == category]
-        for trailer, avg in cat_df.groupby("Trailer")["RPM Total"].mean().round(2).items():
-            avg_display = f"{avg:.2f}" if not pd.isna(avg) else "—"
-            lines.append(f"  • {trailer}: Total — {avg_display}")
+        trailer_stats = cat_df.groupby("Trailer").agg({"Rate": "sum", "Total Miles": "sum"})
+        for trailer, row in trailer_stats.iterrows():
+            miles = row["Total Miles"]
+            rate = row["Rate"]
+            rpm = round(rate / miles, 2) if miles else "—"
+            lines.append(f"  • {trailer}: RPM — {rpm}")
         lines.append("")
 
     return "\n".join(lines)
 
 def generate_my_stats_message(label, df):
     total_loads = len(df)
-    total_miles = int(df['Total Miles'].sum())
-    total_rate = int(df['Rate'].sum())
-    avg_rpm = round(df['RPM Total'].mean(), 2) if not df['RPM Total'].isna().all() else "—"
+    total_miles = df["Total Miles"].sum()
+    total_rate = df["Rate"].sum()
+    avg_rpm = round(total_rate / total_miles, 2) if total_miles else "—"
 
     return (
         f"📊 {label}\n"
         f"📦 Total Loads: {total_loads}\n"
-        f"📏 Total Miles: {total_miles}\n"
-        f"💰 Total Rate: ${total_rate}\n"
+        f"📏 Total Miles: {int(total_miles)}\n"
+        f"💰 Total Rate: ${int(total_rate)}\n"
         f"📈 Average RPM: {avg_rpm}"
     )
 
