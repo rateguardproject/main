@@ -263,6 +263,14 @@ async def start_edit_load(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Загрузка таблицы
     sheet = get_sheet()
     records = sheet.get_all_records()
+    # Очистка старых сообщений из /my_loads
+    if "my_load_messages" in context.user_data:
+        for msg_id in context.user_data["my_load_messages"]:
+            try:
+                await context.bot.delete_message(update.effective_chat.id, msg_id)
+            except:
+                pass
+        context.user_data["my_load_messages"] = []  # очистка списка
     for i, row in enumerate(records):
         if row["Pickup ZIP"] == pickup_zip and str(row["User ID"]) == user_id:
             edit_state[user_id] = {
@@ -564,10 +572,13 @@ async def my_loads(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cancel_edit(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    await query.message.edit_text("❌ Editing canceled.")
+    msg = await query.message.reply_text("❌ Editing canceled.")
+    await asyncio.sleep(5)
+    await context.bot.delete_message(chat_id=msg.chat.id, message_id=msg.message_id)
     user_id = str(update.effective_user.id)
     if user_id in edit_state:
         del edit_state[user_id]
+        return ConversationHandler.END
 
 def get_column_index(sheet, column_name):
     header = sheet.row_values(1)
