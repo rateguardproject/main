@@ -166,6 +166,8 @@ async def handle_submit_callback(update: Update, context: ContextTypes.DEFAULT_T
         msg = await query.message.reply_text("❌ Submission canceled.")
         await asyncio.sleep(5)
         await context.bot.delete_message(chat_id, msg.message_id)
+        context.user_data.clear()  # очищаем данные
+        return ConversationHandler.END  # завершаем сценарий
     if query.data == "skip" and field == "comment":
         context.user_data[field] = ""
     else:
