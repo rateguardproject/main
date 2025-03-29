@@ -171,7 +171,7 @@ async def handle_submit_callback(update: Update, context: ContextTypes.DEFAULT_T
     await context.bot.delete_message(chat_id, query.message.message_id)
 
     if query.data == "cancel":
-        msg = await query.message.reply_text("❌ Submission canceled.")
+        msg = await context.bot.send_message(chat_id=chat_id, text="❌ Submission canceled.")
         await asyncio.sleep(5)
         await context.bot.delete_message(chat_id, msg.message_id)
         context.user_data.clear()  # очищаем данные
