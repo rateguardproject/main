@@ -488,6 +488,5 @@ if __name__ == '__main__':
     app.add_handler(CallbackQueryHandler(start_edit_load, pattern="^edit_"))
     app.add_handler(CallbackQueryHandler(handle_edit_field_selection, pattern="^editfield_"))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_edit_input))
-
     app.add_handler(submit_conv)
     app.run_polling()
