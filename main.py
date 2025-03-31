@@ -648,7 +648,7 @@ async def cancel_edit(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def get_column_index(sheet, column_name):
     header = sheet.row_values(1)
     return header.index(column_name) + 1
-ч
+
 def update_rpm_in_edit(sheet, row_idx, updated_data):
     """
     Обновляет RPM Total в Google Sheet после редактирования 'Rate' или 'Total Miles'.
