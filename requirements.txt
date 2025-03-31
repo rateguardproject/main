@@ -8,3 +8,4 @@ flask
 pgeocode
 pandas
 numpy
+firebase-admin
