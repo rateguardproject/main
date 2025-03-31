@@ -46,9 +46,11 @@ submit_current_messages = {}
 
 # === Утилиты ===
 def resolve_location(value):
+    print("[DEBUG] Resolving:", value)  # <--- добавь
     if len(value) == 2 and value.isalpha():
         return ("", value)
     info = nomi.query_postal_code(value)
+    print("[DEBUG] Result:", info)
     return (info.place_name or "", info.state_code or value)
 
 def classify_distance(miles):
@@ -216,6 +218,7 @@ async def load_data_from_firestore():
     records = []
     for doc in docs:
         item = doc.to_dict()
+        print("[DEBUG] LOADED:", item)  # <--- ВСТАВЬ СЮДА
         try:
             item["Date"] = datetime.strptime(item["Date"], "%Y-%m-%d").date()
         except:
@@ -225,8 +228,9 @@ async def load_data_from_firestore():
         item["RPM Total"] = float(item.get("RPM Total", 0))
         item["Length Category"] = classify_distance(item["Total Miles"])
         records.append(item)
-    return pd.DataFrame(records)
 
+    print(f"[DEBUG] Total records: {len(records)}")  # <--- И СЮДА
+    return pd.DataFrame(records)
 async def stats_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("Today", callback_data="today"),
